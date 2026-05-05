@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -82,27 +83,243 @@ def extract_triples_two_stage(
     return triples_lite, model_lite, True, usage
 
 
+def categorize_nodes(graph: nx.MultiDiGraph) -> Dict[str, str]:
+    categories: Dict[str, str] = {}
+    founded_by_targets = set()
+    headquartered_targets = set()
+    product_targets = set()
+    company_like_subjects = set()
+
+    for u, v, data in graph.edges(data=True):
+        rel = str(data.get("relation", "")).upper()
+        if rel == "FOUNDED_BY":
+            founded_by_targets.add(v)
+            company_like_subjects.add(u)
+        elif rel in {"HEADQUARTERED_IN", "HQ_IN"}:
+            headquartered_targets.add(v)
+            company_like_subjects.add(u)
+        elif rel in {"RELEASED", "INTRODUCED", "DEVELOPED_BY", "DEVELOPS"}:
+            product_targets.add(v)
+            company_like_subjects.add(u)
+        elif rel in {"ACQUIRED", "ACQUIRED_BY", "INVESTED_IN", "MANUFACTURES_CHIPS_FOR"}:
+            company_like_subjects.add(u)
+
+    for node in graph.nodes():
+        text = str(node).strip()
+        if text.isdigit() and len(text) == 4:
+            categories[node] = "year"
+        elif node in founded_by_targets:
+            categories[node] = "person"
+        elif node in headquartered_targets:
+            categories[node] = "location"
+        elif node in product_targets:
+            categories[node] = "product"
+        elif node in company_like_subjects:
+            categories[node] = "company"
+        else:
+            categories[node] = "other"
+    return categories
+
+
+def improved_layout(graph: nx.MultiDiGraph, categories: Dict[str, str]) -> Dict[str, Tuple[float, float]]:
+    base = graph.to_undirected()
+    shells = []
+    shell_center = [n for n, c in categories.items() if c == "company"]
+    shell_mid = [n for n, c in categories.items() if c in {"product", "location", "other"}]
+    shell_outer = [n for n, c in categories.items() if c in {"person", "year"}]
+
+    for shell in [shell_center, shell_mid, shell_outer]:
+        if shell:
+            shells.append(shell)
+    if not shells:
+        shells = [list(graph.nodes())]
+
+    pos0 = nx.shell_layout(base, nlist=shells, scale=7.5, rotate=0)
+    pos = nx.spring_layout(
+        base,
+        pos=pos0,
+        seed=42,
+        k=3.0 / max(1.0, (base.number_of_nodes() ** 0.5) / 4.0),
+        iterations=520,
+        scale=13.0,
+    )
+    pos = resolve_node_collisions(pos, min_dist=1.15, iterations=260)
+    return pos
+
+
+def resolve_node_collisions(
+    pos: Dict[str, Tuple[float, float]],
+    min_dist: float = 0.75,
+    iterations: int = 160,
+) -> Dict[str, Tuple[float, float]]:
+    nodes = list(pos.keys())
+    coord = {n: [float(pos[n][0]), float(pos[n][1])] for n in nodes}
+
+    for _ in range(iterations):
+        moved = False
+        for i in range(len(nodes)):
+            n1 = nodes[i]
+            x1, y1 = coord[n1]
+            for j in range(i + 1, len(nodes)):
+                n2 = nodes[j]
+                x2, y2 = coord[n2]
+                dx = x1 - x2
+                dy = y1 - y2
+                dist_sq = dx * dx + dy * dy
+                if dist_sq == 0.0:
+                    # Deterministic tiny nudge for exact overlap.
+                    dx = ((hash(n1) % 31) - 15) * 1e-3
+                    dy = ((hash(n2) % 29) - 14) * 1e-3
+                    dist_sq = dx * dx + dy * dy
+                dist = dist_sq ** 0.5
+                if dist < min_dist:
+                    moved = True
+                    push = (min_dist - dist) * 0.5
+                    ux = dx / dist
+                    uy = dy / dist
+                    coord[n1][0] += ux * push
+                    coord[n1][1] += uy * push
+                    coord[n2][0] -= ux * push
+                    coord[n2][1] -= uy * push
+        if not moved:
+            break
+
+    return {n: (coord[n][0], coord[n][1]) for n in nodes}
+
+
+def unique_edge_labels(graph: nx.MultiDiGraph) -> Dict[Tuple[str, str], str]:
+    labels: Dict[Tuple[str, str], List[str]] = {}
+    for u, v, data in graph.edges(data=True):
+        key = tuple(sorted((u, v)))
+        labels.setdefault(key, [])
+        rel = str(data.get("relation", "RELATED_TO"))
+        if rel not in labels[key]:
+            labels[key].append(rel)
+    return {k: " | ".join(v) for k, v in labels.items()}
+
+
+def build_priority_edge_labels(
+    graph: nx.MultiDiGraph,
+    categories: Dict[str, str],
+    max_labels: int = 24,
+) -> Dict[Tuple[str, str], str]:
+    labels = unique_edge_labels(graph)
+    degree = dict(graph.degree())
+
+    def score(item: Tuple[Tuple[str, str], str]) -> float:
+        (u, v), txt = item
+        cat_u = categories.get(u, "other")
+        cat_v = categories.get(v, "other")
+        cat_score = 0.0
+        if "company" in (cat_u, cat_v):
+            cat_score += 2.5
+        if cat_u == "company" and cat_v == "company":
+            cat_score += 1.5
+        if "person" in (cat_u, cat_v):
+            cat_score += 0.5
+        rel_score = 0.25 * len(txt.split("|"))
+        deg_score = 0.04 * (degree.get(u, 0) + degree.get(v, 0))
+        return cat_score + rel_score + deg_score
+
+    ranked = sorted(labels.items(), key=score, reverse=True)
+    return dict(ranked[:max_labels])
+
+
+def format_node_label(node: str, max_len: int = 14) -> str:
+    text = str(node).strip()
+    if len(text) <= max_len:
+        return text
+    parts = text.split()
+    if len(parts) >= 2:
+        line1 = []
+        line2 = []
+        total = 0
+        for p in parts:
+            if total + len(p) + (1 if line1 else 0) <= max_len:
+                line1.append(p)
+                total += len(p) + (1 if line1 else 0)
+            else:
+                line2.append(p)
+        if line2:
+            second = " ".join(line2)
+            if len(second) > max_len:
+                second = second[: max_len - 1] + "."
+            return f"{' '.join(line1)}\n{second}"
+    return text[: max_len - 1] + "."
+
+
 def draw_graph(graph: nx.MultiDiGraph, output_path: Path) -> None:
     ensure_dir(output_path.parent)
-    plt.figure(figsize=(18, 12))
-    pos = nx.spring_layout(graph, seed=42, k=1.0)
-    nx.draw_networkx_nodes(graph, pos, node_size=700, node_color="#8ecae6", alpha=0.9)
-    nx.draw_networkx_labels(graph, pos, font_size=8)
+    categories = categorize_nodes(graph)
+    pos = improved_layout(graph, categories)
+
+    plt.figure(figsize=(22, 14))
+    color_map = {
+        "company": "#4ea8de",
+        "person": "#90be6d",
+        "year": "#adb5bd",
+        "location": "#f8961e",
+        "product": "#f9844a",
+        "other": "#a2d2ff",
+    }
+    size_map = {
+        "company": 860,
+        "person": 470,
+        "year": 330,
+        "location": 430,
+        "product": 430,
+        "other": 390,
+    }
+
+    for category in ["company", "person", "year", "location", "product", "other"]:
+        nodes = [n for n, c in categories.items() if c == category]
+        if not nodes:
+            continue
+        nx.draw_networkx_nodes(
+            graph,
+            pos,
+            nodelist=nodes,
+            node_size=size_map[category],
+            node_color=color_map[category],
+            alpha=0.92,
+            edgecolors="#184e77",
+            linewidths=0.45,
+        )
+
+    label_dict = {node: format_node_label(node, max_len=14) for node in graph.nodes()}
+    nx.draw_networkx_labels(
+        graph,
+        pos,
+        labels=label_dict,
+        font_size=6.1,
+        font_weight="normal",
+        font_color="#0f172a",
+    )
     nx.draw_networkx_edges(
         graph,
         pos,
-        width=1.2,
+        width=0.95,
         edge_color="#5f0f40",
+        alpha=0.42,
         arrows=True,
         arrowstyle="-|>",
-        arrowsize=12,
+        arrowsize=9,
         connectionstyle="arc3,rad=0.08",
     )
-    edge_labels = {(u, v): d.get("relation", "") for u, v, d in graph.edges(data=True)}
-    nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels, font_size=6)
+    edge_labels = build_priority_edge_labels(graph, categories, max_labels=24)
+    nx.draw_networkx_edge_labels(
+        graph,
+        pos,
+        edge_labels=edge_labels,
+        font_size=4.7,
+        rotate=False,
+        font_color="#202020",
+        label_pos=0.45,
+        bbox={"boxstyle": "round,pad=0.12", "fc": (1, 1, 1, 0.70), "ec": (0, 0, 0, 0.06)},
+    )
     plt.axis("off")
     plt.tight_layout()
-    plt.savefig(output_path, dpi=220)
+    plt.savefig(output_path, dpi=260)
     plt.close()
 
 
