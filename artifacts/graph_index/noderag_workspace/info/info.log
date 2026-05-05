@@ -1,0 +1,11 @@
+2026-05-05 10:23:03,233 - info_logger - INFO - Init Pipeline Started
+2026-05-05 10:23:03,234 - info_logger - INFO - Init Pipeline Finished, Time spent: 0.0010607242584228516 seconds
+2026-05-05 10:23:03,240 - info_logger - INFO - Document Pipeline Started
+2026-05-05 10:23:03,272 - info_logger - INFO - Document Pipeline Finished, Time spent: 0.03189873695373535 seconds
+2026-05-05 10:23:03,310 - info_logger - INFO - Text Pipeline Started
+2026-05-05 10:23:21,964 - info_logger - INFO - Text Pipeline Finished, Time spent: 18.65381145477295 seconds
+2026-05-05 10:23:21,968 - info_logger - INFO - Graph Pipeline Started
+2026-05-05 10:23:21,982 - info_logger - INFO - Graph Pipeline Finished, Time spent: 0.014111995697021484 seconds
+2026-05-05 10:23:21,992 - info_logger - INFO - Attribute Generation Started
+2026-05-05 10:52:12,516 - info_logger - INFO - Init Pipeline Started
+2026-05-05 10:52:12,517 - info_logger - INFO - Init Pipeline Finished, Time spent: 0.0009996891021728516 seconds

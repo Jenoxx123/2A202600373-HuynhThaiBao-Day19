@@ -1,0 +1,18 @@
+{
+  "corpus_sentences": 30,
+  "raw_triples": 73,
+  "deduplicated_triples": 73,
+  "node_count": 69,
+  "edge_count": 73,
+  "escalated_items": 2,
+  "token_usage": {
+    "prompt_tokens": 3861,
+    "completion_tokens": 3247,
+    "total_tokens": 7108
+  },
+  "build_seconds": 75.846,
+  "noderag_status": {
+    "status": "fallback",
+    "message": "NodeRAG failed and fallback metadata was created: 'charmap' codec can't encode character '\\U0001f680' in position 0: character maps to <undefined>"
+  }
+}

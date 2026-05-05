@@ -1,0 +1,8 @@
+{
+  "reason": "'charmap' codec can't encode character '\\U0001f680' in position 0: character maps to <undefined>",
+  "fallback_engine": "custom_networkx_graph",
+  "graph_node_count": 69,
+  "graph_edge_count": 73,
+  "deduplicated_triples": 73,
+  "note": "NodeRAG internal pipeline failed, but GraphRAG artifacts are available from scripts/01_build_graph.py output (triples.jsonl + graph.pkl + graph.png)."
+}

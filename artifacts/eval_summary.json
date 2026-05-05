@@ -1,0 +1,18 @@
+{
+  "question_count": 20,
+  "flat_correct_count": 18,
+  "graph_correct_count": 18,
+  "flat_accuracy": 0.9,
+  "graph_accuracy": 0.9,
+  "flat_token_usage": {
+    "prompt_tokens": 3378,
+    "completion_tokens": 387,
+    "total_tokens": 3765
+  },
+  "graph_token_usage": {
+    "prompt_tokens": 5267,
+    "completion_tokens": 544,
+    "total_tokens": 5811
+  },
+  "total_eval_seconds": 71.172
+}

@@ -1,0 +1,19 @@
+{
+  "config": {
+    "main_folder": "C:\\assignments-main\\Day 19\\artifacts\\graph_index\\noderag_workspace",
+    "language": "English",
+    "chunk_size": 800,
+    "docu_type": "mixed",
+    "dim": 1536
+  },
+  "model_config": {
+    "service_provider": "openai",
+    "model_name": "gpt-4o-mini",
+    "temperature": 0.0,
+    "max_tokens": 1000
+  },
+  "embedding_config": {
+    "service_provider": "openai_embedding",
+    "embedding_model_name": "text-embedding-3-small"
+  }
+}
